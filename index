@@ -395,11 +395,11 @@
 
 
 // 1. UBAH NILAI INI MENJADI false JIKA APLIKASI AKAN DI-DEPLOY KE BLOGGER / HOSTING
-const IS_PREVIEW = true;
+const IS_PREVIEW = false;
 
 
 // 2. MASUKKAN URL WEB APP GOOGLE APPS SCRIPT ANDA DI BAWAH INI
-const GAS_URL = "URL_DEPLOY_GAS_ANDA_DISINI";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyXa7J50M5tySS_edvZkrlN3tRIh7VF6M9PBddDTXuAbHSKpMj9djatUthQMSY9XSLJ/exec";
 
 
 // ==============================================================================
