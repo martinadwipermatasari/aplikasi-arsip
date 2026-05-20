@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sistem Arsip Surat Digital V2</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+       
+        :root { --primary: #2563eb; --secondary: #64748b; }
+        * { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+
+
+        /* Full Page Blogger Override */
+        #app-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 999999; background: #f8fafc; overflow: hidden;
+        }
+
+
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+
+        .loader {
+            border: 3px solid #f3f3f3; border-top: 3px solid var(--primary);
+            border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+       
+        .card-hover { transition: all 0.2s ease; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+
+
+<div id="app-container">
+    <div id="app" class="h-full flex flex-col">
+       
+        <!-- LOADING OVERLAY -->
+        <div v-if="loading" class="fixed inset-0 z-[100] bg-white/80 backdrop-blur-sm flex items-center justify-center">
+            <div class="flex flex-col items-center">
+                <div class="loader mb-2"></div>
+                <p class="text-sm font-medium text-slate-600">Memproses...</p>
+            </div>
+        </div>
+
+
+        <!-- CUSTOM CONFIRM MODAL (Pengganti alert/confirm bawaan browser) -->
+        <transition name="fade">
+            <div v-if="confirmDialog.show" class="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 text-center">
+                    <div class="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-2">Konfirmasi</h3>
+                    <p class="text-slate-500 text-sm mb-6">{{ confirmDialog.message }}</p>
+                    <div class="flex gap-3">
+                        <button @click="confirmDialog.show = false" class="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors">Batal</button>
+                        <button @click="executeConfirm" class="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 shadow-lg shadow-red-200 transition-colors">Ya, Lanjutkan</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+
+        <!-- LOGIN PAGE -->
+        <transition name="fade">
+            <div v-if="!session" class="h-full flex items-center justify-center p-4 bg-slate-50">
+                <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border border-slate-100">
+                    <div class="text-center mb-8">
+                        <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl">
+                            <i class="fas fa-box-archive"></i>
+                        </div>
+                        <h1 class="text-2xl font-bold text-slate-800">E-Arsip Digital</h1>
+                        <p class="text-slate-500">Silakan masuk ke akun Anda</p>
+                    </div>
+                   
+                    <form @submit.prevent="handleLogin" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Username</label>
+                            <input v-model="loginForm.user" type="text" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Password</label>
+                            <input v-model="loginForm.pass" type="password" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                        </div>
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-200">
+                            Masuk Ke Sistem
+                        </button>
+                    </form>
+                    <p v-if="errorMsg" class="mt-4 text-center text-red-500 text-sm font-medium italic">{{ errorMsg }}</p>
+                </div>
+            </div>
+        </transition>
+
+
+        <!-- MAIN APP -->
+        <div v-if="session" class="h-full flex flex-col md:flex-row overflow-hidden">
+           
+            <!-- SIDEBAR (Desktop) / TOPBAR (Mobile) -->
+            <aside :class="isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'"
+                   class="fixed md:relative z-50 w-64 h-full bg-white border-r border-slate-200 transition-transform duration-300 ease-in-out">
+                <div class="h-full flex flex-col">
+                    <div class="p-6 border-b border-slate-50 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-blue-600 flex items-center gap-2">
+                            <i class="fas fa-folder-open"></i> E-Arsip
+                        </h2>
+                        <button @click="isMobileMenuOpen = false" class="md:hidden text-slate-400 hover:text-slate-600">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                   
+                    <nav class="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-hide">
+                        <template v-for="m in menus" :key="m.id">
+                            <button v-if="!m.adminOnly || session.role === 'admin'" @click="changeTab(m.id)"
+                                    :class="currentTab === m.id ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors">
+                                <i :class="m.icon" class="w-5 text-center"></i> {{ m.label }}
+                            </button>
+                        </template>
+                    </nav>
+
+
+                    <div class="p-4 border-t border-slate-100">
+                        <div class="flex items-center gap-3 px-2 mb-4">
+                            <div class="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-500">
+                                <i class="fas fa-user text-sm"></i>
+                            </div>
+                            <div class="overflow-hidden">
+                                <p class="text-sm font-bold text-slate-800 truncate">{{ session.nama }}</p>
+                                <p class="text-xs text-slate-500 capitalize">{{ session.role }}</p>
+                            </div>
+                        </div>
+                        <button @click="handleLogout" class="w-full flex items-center justify-center gap-2 py-2 text-red-500 hover:bg-red-50 rounded-lg transition-all font-semibold border border-red-100">
+                            <i class="fas fa-sign-out-alt"></i> Keluar
+                        </button>
+                    </div>
+                </div>
+            </aside>
+
+
+            <!-- CONTENT AREA -->
+            <main class="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden relative">
+                <!-- Mobile overlay saat sidebar terbuka -->
+                <div v-if="isMobileMenuOpen" @click="isMobileMenuOpen = false" class="absolute inset-0 bg-slate-900/20 z-40 md:hidden"></div>
+
+
+                <!-- Header -->
+                <header class="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between md:px-8">
+                    <button @click="isMobileMenuOpen = !isMobileMenuOpen" class="md:hidden text-slate-600 p-2">
+                        <i class="fas fa-bars text-xl"></i>
+                    </button>
+                    <h2 class="text-lg font-bold text-slate-800">{{ currentTabTitle }}</h2>
+                    <div class="flex items-center gap-4">
+                        <span class="hidden md:inline text-xs font-medium text-slate-400 uppercase tracking-widest">{{ new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long'}) }}</span>
+                    </div>
+                </header>
+
+
+                <!-- Dynamic Content -->
+                <section class="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-hide">
+                   
+                    <!-- DASHBOARD TAB -->
+                    <div v-if="currentTab === 'dashboard'" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div v-for="s in dashboardStats" :key="s.label" class="bg-white p-6 rounded-2xl border border-slate-100 card-hover">
+                            <div class="flex items-center justify-between mb-4">
+                                <div :class="s.color" class="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg">
+                                    <i :class="s.icon"></i>
+                                </div>
+                                <span class="text-xs font-bold text-slate-400 uppercase">Total</span>
+                            </div>
+                            <h3 class="text-3xl font-black text-slate-800">{{ s.value }}</h3>
+                            <p class="text-slate-500 text-sm">{{ s.label }}</p>
+                        </div>
+                    </div>
+
+
+                    <!-- SURAT TAB (MASUK & KELUAR) -->
+                    <div v-if="currentTab === 'surat_masuk' || currentTab === 'surat_keluar'">
+                        <div class="flex flex-col md:flex-row gap-4 mb-6 items-center justify-between">
+                            <div class="relative w-full md:w-96">
+                                <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                <input v-model="searchQuery" type="text" placeholder="Cari No. Surat / Perihal..."
+                                       class="w-full pl-11 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm text-sm">
+                            </div>
+                            <button @click="openModal('surat')" class="w-full md:w-auto bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all">
+                                <i class="fas fa-plus"></i> Tambah Data
+                            </button>
+                        </div>
+
+
+                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="overflow-x-auto scrollbar-hide">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-50/50 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                                            <th class="px-6 py-4">No. Surat / Tgl</th>
+                                            <th class="px-6 py-4">Penerima/Pengirim</th>
+                                            <th class="px-6 py-4">Kategori / Perihal</th>
+                                            <th class="px-6 py-4 text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-50">
+                                        <tr v-for="item in filteredSurat" :key="item.id" class="hover:bg-slate-50/50 transition-colors">
+                                            <td class="px-6 py-4">
+                                                <p class="font-bold text-slate-800 text-sm">{{ item.no }}</p>
+                                                <p class="text-xs text-slate-400">{{ formatDate(item.tgl) }}</p>
+                                            </td>
+                                            <td class="px-6 py-4 text-sm text-slate-600 font-medium">{{ item.pihak }}</td>
+                                            <td class="px-6 py-4">
+                                                <span class="inline-block px-2 py-1 bg-blue-50 text-blue-600 text-[10px] font-bold rounded uppercase mb-1">{{ item.kategori }}</span>
+                                                <p class="text-sm text-slate-500 truncate max-w-xs">{{ item.perihal }}</p>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <div class="flex items-center justify-center gap-2">
+                                                    <a :href="item.fileUrl" target="_blank" class="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors" title="Lihat File">
+                                                        <i class="fas fa-file-arrow-down"></i>
+                                                    </a>
+                                                    <button @click="requestConfirm('Yakin ingin menghapus surat ini?', 'surat', item.id)" class="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors" title="Hapus">
+                                                        <i class="fas fa-trash-can"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="filteredSurat.length === 0">
+                                            <td colspan="4" class="px-6 py-12 text-center text-slate-400 italic">Data tidak ditemukan atau masih kosong.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <!-- KELOLA KATEGORI TAB (Hanya Admin) -->
+                    <div v-if="currentTab === 'kategori' && session.role === 'admin'" class="max-w-4xl mx-auto bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="font-bold text-slate-800">Manajemen Kategori Surat</h3>
+                            <button @click="openModal('kategori')" class="text-sm bg-blue-50 text-blue-600 px-4 py-2 rounded-lg font-bold hover:bg-blue-100 transition-colors"><i class="fas fa-plus mr-1"></i> Tambah Kategori</button>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                            <div v-for="(k, idx) in kategoris" :key="idx" class="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 bg-white rounded-full flex items-center justify-center text-blue-500 border border-slate-200 shadow-sm">
+                                        <i class="fas fa-tag text-xs"></i>
+                                    </div>
+                                    <p class="font-bold text-slate-800 text-sm">{{ k }}</p>
+                                </div>
+                                <button @click="requestConfirm(`Hapus kategori '${k}'?`, 'kategori', null, k)" class="text-red-400 hover:text-red-600 p-2 transition-colors">
+                                    <i class="fas fa-trash-can text-sm"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div v-if="kategoris.length === 0" class="text-center py-8 text-slate-400 italic text-sm">Belum ada kategori.</div>
+                    </div>
+
+
+                    <!-- PENGATURAN / USER TAB (Hanya Admin) -->
+                    <div v-if="currentTab === 'user' && session.role === 'admin'" class="max-w-4xl mx-auto bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="font-bold text-slate-800">Manajemen Pengguna</h3>
+                            <button @click="openModal('user')" class="text-sm bg-blue-50 text-blue-600 px-4 py-2 rounded-lg font-bold hover:bg-blue-100 transition-colors"><i class="fas fa-plus mr-1"></i> Tambah User</button>
+                        </div>
+                        <div class="space-y-3">
+                            <div v-for="u in users" :key="u.id" class="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center text-blue-500 border border-slate-200 shadow-sm">
+                                        <i class="fas fa-user-shield"></i>
+                                    </div>
+                                    <div>
+                                        <p class="font-bold text-slate-800">{{ u.nama }}</p>
+                                        <p class="text-xs text-slate-500">@{{ u.username }} • <span class="capitalize">{{ u.role }}</span></p>
+                                    </div>
+                                </div>
+                                <button v-if="u.username !== 'admin'" @click="requestConfirm(`Hapus pengguna '${u.nama}'?`, 'user', u.id)" class="text-red-400 hover:text-red-600 p-2 transition-colors">
+                                    <i class="fas fa-user-minus"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+
+                </section>
+            </main>
+
+
+            <!-- MODAL TAMBAH DATA (Surat / User / Kategori) -->
+            <div v-if="modal.show" class="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                    <div class="p-6 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0">
+                        <h3 class="text-lg font-bold text-slate-800">{{ modal.title }}</h3>
+                        <button @click="modal.show = false" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times"></i></button>
+                    </div>
+                   
+                    <!-- FORM SURAT -->
+                    <div v-if="modal.type === 'surat'" class="p-6 overflow-y-auto space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">No. Surat</label>
+                                <input v-model="forms.surat.no" type="text" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Tanggal</label>
+                                <input v-model="forms.surat.tgl" type="date" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">{{ currentTab === 'surat_masuk' ? 'Pengirim' : 'Penerima' }}</label>
+                            <input v-model="forms.surat.pihak" type="text" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Kategori</label>
+                            <select v-model="forms.surat.kategori" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm">
+                                <option value="">Pilih Kategori</option>
+                                <option v-for="k in kategoris" :key="k" :value="k">{{ k }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Perihal</label>
+                            <textarea v-model="forms.surat.perihal" rows="2" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm"></textarea>
+                        </div>
+                        <div class="p-4 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2">
+                            <i class="fas fa-cloud-arrow-up text-2xl text-slate-300"></i>
+                            <p class="text-xs text-slate-500 text-center">Format: PDF/Gambar. Maks 5MB.</p>
+                            <input type="file" @change="handleFileChange" id="fileIn" class="hidden" accept=".pdf,image/*">
+                            <label for="fileIn" class="px-4 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-blue-600 cursor-pointer hover:bg-blue-50 transition-colors">
+                                {{ forms.surat.fileName ? forms.surat.fileName : 'Pilih File' }}
+                            </label>
+                        </div>
+                    </div>
+
+
+                    <!-- FORM KATEGORI -->
+                    <div v-if="modal.type === 'kategori'" class="p-6 space-y-4">
+                         <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Nama Kategori Baru</label>
+                            <input v-model="forms.kategori.nama" type="text" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm" placeholder="Contoh: Dokumen Negara">
+                        </div>
+                    </div>
+
+
+                    <!-- FORM USER -->
+                    <div v-if="modal.type === 'user'" class="p-6 space-y-4">
+                         <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Nama Lengkap</label>
+                            <input v-model="forms.user.nama" type="text" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Username</label>
+                                <input v-model="forms.user.username" type="text" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label>
+                                <input v-model="forms.user.password" type="password" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Role</label>
+                            <select v-model="forms.user.role" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm">
+                                <option value="petugas">Petugas</option>
+                                <option value="admin">Administrator</option>
+                            </select>
+                        </div>
+                    </div>
+
+
+                    <div class="p-6 border-t border-slate-100 flex gap-3">
+                        <button @click="modal.show = false" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold text-sm">Batal</button>
+                        <button @click="saveData" class="flex-1 py-2 rounded-lg bg-blue-600 text-white font-bold text-sm shadow-lg shadow-blue-100">Simpan</button>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Toast Mobile -->
+            <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-2xl text-sm font-medium shadow-2xl opacity-0 transition-all pointer-events-none z-[200] text-center whitespace-nowrap"></div>
+
+
+        </div>
+    </div>
+</div>
+
+
+<script>
+// ==============================================================================
+// ======================== BAGIAN KONFIGURASI APLIKASI =========================
+// ==============================================================================
+
+
+// 1. UBAH NILAI INI MENJADI false JIKA APLIKASI AKAN DI-DEPLOY KE BLOGGER / HOSTING
+const IS_PREVIEW = true;
+
+
+// 2. MASUKKAN URL WEB APP GOOGLE APPS SCRIPT ANDA DI BAWAH INI
+const GAS_URL = "URL_DEPLOY_GAS_ANDA_DISINI";
+
+
+// ==============================================================================
+// ==============================================================================
+
+
+// Data lokal untuk mensimulasikan database di mode Preview Canvas
+let mockDataStore = {
+    users: [{id: 1, nama:'Administrator', username:'admin', role:'admin'}],
+    kategoris: ['Dinas', 'Pribadi', 'Undangan', 'Penting', 'Lainnya'],
+    suratMasuk: [{id: 1, no:'001/SM/2024', tgl:'2024-05-10', pihak:'PT Maju Jaya', kategori:'Dinas', perihal:'Undangan Rapat', fileUrl:'#'}],
+    suratKeluar: []
+};
+
+
+const { createApp, ref, computed, onMounted, watch } = Vue;
+
+
+createApp({
+    setup() {
+        const loading = ref(false);
+        const session = ref(null);
+        const currentTab = ref('dashboard');
+        const isMobileMenuOpen = ref(false);
+        const searchQuery = ref('');
+        const errorMsg = ref('');
+
+
+        const loginForm = ref({ user: '', pass: '' });
+       
+        // Data Store
+        const users = ref([]);
+        const kategoris = ref([]);
+        const suratMasuk = ref([]);
+        const suratKeluar = ref([]);
+
+
+        // Dialog Konfirmasi Khusus (Menghindari sandboxed alert/confirm)
+        const confirmDialog = ref({ show: false, message: '', actionType: '', actionId: null, actionPayload: null });
+
+
+        const modal = ref({ show: false, type: '', title: '' });
+        const forms = ref({
+            surat: { no: '', tgl: '', pihak: '', kategori: '', perihal: '', fileName: '', fileData: '', mimeType: '' },
+            user: { nama: '', username: '', password: '', role: 'petugas' },
+            kategori: { nama: '' }
+        });
+
+
+        // Menambahkan property adminOnly untuk filter menu
+        const menus = [
+            { id: 'dashboard', label: 'Dashboard', icon: 'fas fa-chart-pie', adminOnly: false },
+            { id: 'surat_masuk', label: 'Surat Masuk', icon: 'fas fa-envelope-open-text', adminOnly: false },
+            { id: 'surat_keluar', label: 'Surat Keluar', icon: 'fas fa-paper-plane', adminOnly: false },
+            { id: 'kategori', label: 'Kelola Kategori', icon: 'fas fa-tags', adminOnly: true },
+            { id: 'user', label: 'Kelola User', icon: 'fas fa-users-gear', adminOnly: true }
+        ];
+
+
+        const currentTabTitle = computed(() => menus.find(m => m.id === currentTab.value)?.label || '');
+
+
+        const dashboardStats = computed(() => [
+            { label: 'Surat Masuk', value: suratMasuk.value.length, icon: 'fas fa-download', color: 'bg-blue-500' },
+            { label: 'Surat Keluar', value: suratKeluar.value.length, icon: 'fas fa-upload', color: 'bg-indigo-500' },
+            { label: 'Pengguna', value: users.value.length, icon: 'fas fa-users', color: 'bg-emerald-500' }
+        ]);
+
+
+        const filteredSurat = computed(() => {
+            const list = currentTab.value === 'surat_masuk' ? suratMasuk.value : suratKeluar.value;
+            if (!searchQuery.value) return list;
+            const q = searchQuery.value.toLowerCase();
+            return list.filter(i => i.no.toLowerCase().includes(q) || i.perihal.toLowerCase().includes(q) || i.pihak.toLowerCase().includes(q));
+        });
+
+
+        // --- CORE METHODS ---
+        const callBackend = async (action, data = {}) => {
+            if (IS_PREVIEW) {
+                return await mockBackend(action, data);
+            }
+            const body = JSON.stringify({ action, ...data });
+            const resp = await fetch(GAS_URL, { method: 'POST', body });
+            const res = await resp.json();
+            if (res.status === 'error') throw new Error(res.message);
+            return res.data;
+        };
+
+
+        const showToast = (msg) => {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.classList.remove('opacity-0', 'translate-y-4');
+            setTimeout(() => t.classList.add('opacity-0', 'translate-y-4'), 3000);
+        };
+
+
+        const handleLogin = async () => {
+            loading.value = true;
+            errorMsg.value = '';
+            try {
+                const res = await callBackend('login', loginForm.value);
+                session.value = res;
+                localStorage.setItem('arsip_v2_session', JSON.stringify(res));
+                await initData();
+            } catch (err) {
+                errorMsg.value = "Username atau Password salah.";
+            } finally {
+                loading.value = false;
+            }
+        };
+
+
+        const initData = async () => {
+            try {
+                loading.value = true;
+                const res = await callBackend('getAllData');
+                suratMasuk.value = res.suratMasuk;
+                suratKeluar.value = res.suratKeluar;
+                users.value = res.users;
+                // Jika backend belum mendukung return kategori, ambil dari default store
+                kategoris.value = res.kategoris || ['Dinas', 'Pribadi', 'Undangan', 'Penting', 'Lainnya'];
+            } catch (e) {
+                showToast("Gagal mengambil data.");
+            } finally {
+                loading.value = false;
+            }
+        };
+
+
+        const handleLogout = () => {
+            session.value = null;
+            localStorage.removeItem('arsip_v2_session');
+        };
+
+
+        const changeTab = (id) => {
+            currentTab.value = id;
+            isMobileMenuOpen.value = false;
+            searchQuery.value = '';
+        };
+
+
+        const openModal = (type) => {
+            let title = '';
+            if (type === 'surat') title = currentTab.value === 'surat_masuk' ? 'Tambah Surat Masuk' : 'Tambah Surat Keluar';
+            else if (type === 'user') title = 'Tambah User Baru';
+            else if (type === 'kategori') title = 'Tambah Kategori Baru';
+
+
+            modal.value = { show: true, type, title };
+           
+            // Reset Forms
+            forms.value.surat = { no: '', tgl: new Date().toISOString().split('T')[0], pihak: '', kategori: '', perihal: '', fileName: '', fileData: '', mimeType: '' };
+            forms.value.user = { nama: '', username: '', password: '', role: 'petugas' };
+            forms.value.kategori = { nama: '' };
+        };
+
+
+        const handleFileChange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 5 * 1024 * 1024) return showToast("File terlalu besar (Maks 5MB)");
+           
+            const reader = new FileReader();
+            reader.onload = (f) => {
+                forms.value.surat.fileName = file.name;
+                forms.value.surat.mimeType = file.type;
+                forms.value.surat.fileData = f.target.result.split(',')[1];
+            };
+            reader.readAsDataURL(file);
+        };
+
+
+        const saveData = async () => {
+            // Validasi Sederhana Form Kategori
+            if (modal.value.type === 'kategori' && !forms.value.kategori.nama.trim()) {
+                return showToast("Nama kategori tidak boleh kosong!");
+            }
+
+
+            loading.value = true;
+            try {
+                if (modal.value.type === 'surat') {
+                    const action = currentTab.value === 'surat_masuk' ? 'addSuratMasuk' : 'addSuratKeluar';
+                    await callBackend(action, forms.value.surat);
+                } else if (modal.value.type === 'user') {
+                    await callBackend('addUser', forms.value.user);
+                } else if (modal.value.type === 'kategori') {
+                    await callBackend('addKategori', forms.value.kategori);
+                }
+                modal.value.show = false;
+                showToast("Data berhasil disimpan!");
+                await initData();
+            } catch (e) {
+                showToast("Kesalahan: " + e.message);
+            } finally {
+                loading.value = false;
+            }
+        };
+
+
+        // Membuka Modal Konfirmasi Custom
+        const requestConfirm = (msg, type, id, payload = null) => {
+            confirmDialog.value = { show: true, message: msg, actionType: type, actionId: id, actionPayload: payload };
+        };
+
+
+        // Mengeksekusi Aksi setelah Dikonfirmasi
+        const executeConfirm = async () => {
+            confirmDialog.value.show = false;
+            loading.value = true;
+            try {
+                let action = '';
+                const type = confirmDialog.value.actionType;
+                const id = confirmDialog.value.actionId;
+                const payload = confirmDialog.value.actionPayload;
+
+
+                if (type === 'user') action = 'deleteUser';
+                else if (type === 'kategori') action = 'deleteKategori';
+                else action = currentTab.value === 'surat_masuk' ? 'deleteSuratMasuk' : 'deleteSuratKeluar';
+               
+                await callBackend(action, { id: id, nama: payload });
+                showToast("Berhasil dihapus");
+                await initData();
+            } catch (e) {
+                showToast("Gagal menghapus.");
+            } finally {
+                loading.value = false;
+            }
+        };
+
+
+        const formatDate = (d) => {
+            if (!d) return '-';
+            return new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric'});
+        };
+
+
+        // --- MOCK BACKEND FOR PREVIEW ---
+        // Kini tersinkron dengan variabel "mockDataStore" di atas
+        const mockBackend = async (action, data) => {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    if (action === 'login') {
+                        if (data.user === 'admin' && data.pass === 'edudigital') resolve({nama: 'Administrator', username: 'admin', role: 'admin'});
+                        else if (data.user === 'peserta' && data.pass === 'edudigital') resolve({nama: 'User Demo', username: 'peserta', role: 'petugas'});
+                        else reject(new Error("Username/Password salah"));
+                    } else if (action === 'getAllData') {
+                        resolve(JSON.parse(JSON.stringify(mockDataStore)));
+                    } else if (action === 'addKategori') {
+                        mockDataStore.kategoris.push(data.nama); resolve({status:'ok'});
+                    } else if (action === 'deleteKategori') {
+                        mockDataStore.kategoris = mockDataStore.kategoris.filter(k => k !== data.nama); resolve({status:'ok'});
+                    } else if (action === 'addSuratMasuk') {
+                        data.id = Date.now(); mockDataStore.suratMasuk.push(data); resolve({status:'ok'});
+                    } else if (action === 'addSuratKeluar') {
+                        data.id = Date.now(); mockDataStore.suratKeluar.push(data); resolve({status:'ok'});
+                    } else if (action === 'addUser') {
+                        data.id = Date.now(); mockDataStore.users.push(data); resolve({status:'ok'});
+                    } else if (action === 'deleteUser') {
+                        mockDataStore.users = mockDataStore.users.filter(u => u.id !== data.id); resolve({status:'ok'});
+                    } else if (action === 'deleteSuratMasuk') {
+                        mockDataStore.suratMasuk = mockDataStore.suratMasuk.filter(s => s.id !== data.id); resolve({status:'ok'});
+                    } else if (action === 'deleteSuratKeluar') {
+                        mockDataStore.suratKeluar = mockDataStore.suratKeluar.filter(s => s.id !== data.id); resolve({status:'ok'});
+                    } else resolve({ status: 'ok' });
+                }, 600);
+            });
+        };
+
+
+        onMounted(() => {
+            const saved = localStorage.getItem('arsip_v2_session');
+            if (saved) {
+                session.value = JSON.parse(saved);
+                initData();
+            }
+        });
+
+
+        return {
+            loading, session, currentTab, isMobileMenuOpen, searchQuery, errorMsg,
+            loginForm, users, kategoris, suratMasuk, suratKeluar, modal, forms, confirmDialog,
+            currentTabTitle, dashboardStats, filteredSurat, menus,
+            handleLogin, handleLogout, changeTab, openModal, handleFileChange, saveData, requestConfirm, executeConfirm, formatDate
+        };
+    }
+}).mount('#app');
+</script>
+
+
+</body>
+</html>
+
+
